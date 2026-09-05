@@ -1,32 +1,43 @@
 using System;
 using System.Collections.Concurrent;
+using System.Globalization;
 using System.IO.Ports;
 using System.Threading;
 using UnityEngine;
 
 /// <summary>
-/// Minimal Arduino-to-Unity test.
+/// Minimal Arduino-to-Unity controller test.
 ///
 /// Expected serial messages at 115200 baud:
 ///   BUTTON,0
 ///   BUTTON,1
+///   INPUT,512,512,0
+///   TILT,-12.50,24.75
 ///
-/// The component creates its own cube, so the scene needs no manual setup.
+/// The component creates its own movable cube, so the scene needs no manual setup.
 /// </summary>
 public sealed class ButtonCubeDemo : MonoBehaviour
 {
     private const string PreferredPort = "COM5";
     private const int BaudRate = 115200;
+    private const float MovementSpeed = 6f;
+    private const float JoystickDeadZone = 0.15f;
+    private const float RotationFollowSpeed = 10f;
 
     private static readonly Color ReleasedColor = new(0.1f, 0.65f, 1f);
     private static readonly Color PressedColor = new(1f, 0.25f, 0.1f);
 
     private readonly ConcurrentQueue<bool> buttonEvents = new();
+    private readonly ConcurrentQueue<Vector2> joystickEvents = new();
+    private readonly ConcurrentQueue<Vector2> tiltEvents = new();
     private readonly ConcurrentQueue<string> logMessages = new();
 
     private SerialPort serialPort;
     private Thread readerThread;
     private Renderer cubeRenderer;
+    private Transform cubeTransform;
+    private Vector2 joystickInput;
+    private Vector2 tiltInput;
     private volatile bool keepReading;
 
     [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
@@ -45,11 +56,12 @@ public sealed class ButtonCubeDemo : MonoBehaviour
     private void CreateCube()
     {
         var cube = GameObject.CreatePrimitive(PrimitiveType.Cube);
-        cube.name = "Arduino Button Cube";
+        cube.name = "Arduino Controller Cube";
         cube.transform.position = Vector3.zero;
         cube.transform.localScale = Vector3.one * 2f;
 
         cubeRenderer = cube.GetComponent<Renderer>();
+        cubeTransform = cube.transform;
         cubeRenderer.material.color = ReleasedColor;
     }
 
@@ -78,11 +90,11 @@ public sealed class ButtonCubeDemo : MonoBehaviour
             readerThread = new Thread(ReadSerialLoop)
             {
                 IsBackground = true,
-                Name = "Arduino button serial reader"
+                Name = "Arduino controller serial reader"
             };
             readerThread.Start();
 
-            Debug.Log($"Arduino button demo connected to {portName} at {BaudRate} baud.");
+            Debug.Log($"Arduino controller connected to {portName} at {BaudRate} baud.");
         }
         catch (Exception exception)
         {
@@ -107,6 +119,10 @@ public sealed class ButtonCubeDemo : MonoBehaviour
                 {
                     buttonEvents.Enqueue(false);
                 }
+                else
+                {
+                    ParseControllerInput(line);
+                }
             }
             catch (TimeoutException)
             {
@@ -124,6 +140,63 @@ public sealed class ButtonCubeDemo : MonoBehaviour
         }
     }
 
+    private void ParseControllerInput(string line)
+    {
+        var parts = line.Split(',');
+
+        if (parts.Length == 4 && parts[0] == "INPUT")
+        {
+            ParseJoystickAndButton(parts);
+            return;
+        }
+
+        if (parts.Length == 3 && parts[0] == "TILT")
+        {
+            ParseTilt(parts);
+        }
+    }
+
+    private void ParseJoystickAndButton(string[] parts)
+    {
+        if (!int.TryParse(parts[1], out var rawX) ||
+            !int.TryParse(parts[2], out var rawY) ||
+            !int.TryParse(parts[3], out var rawButton))
+        {
+            return;
+        }
+
+        var x = NormalizeAxis(rawX);
+        var y = -NormalizeAxis(rawY);
+
+        joystickEvents.Enqueue(new Vector2(x, y));
+        buttonEvents.Enqueue(rawButton == 1);
+    }
+
+    private void ParseTilt(string[] parts)
+    {
+        if (!float.TryParse(parts[1], NumberStyles.Float, CultureInfo.InvariantCulture, out var pitch) ||
+            !float.TryParse(parts[2], NumberStyles.Float, CultureInfo.InvariantCulture, out var roll))
+        {
+            return;
+        }
+
+        tiltEvents.Enqueue(new Vector2(pitch, roll));
+    }
+
+    private static float NormalizeAxis(int rawValue)
+    {
+        var value = Mathf.Clamp((rawValue - 512f) / 511f, -1f, 1f);
+        var magnitude = Mathf.Abs(value);
+
+        if (magnitude <= JoystickDeadZone)
+        {
+            return 0f;
+        }
+
+        var scaledMagnitude = (magnitude - JoystickDeadZone) / (1f - JoystickDeadZone);
+        return Mathf.Sign(value) * scaledMagnitude;
+    }
+
     private void Update()
     {
         while (buttonEvents.TryDequeue(out var isPressed))
@@ -131,13 +204,32 @@ public sealed class ButtonCubeDemo : MonoBehaviour
             cubeRenderer.material.color = isPressed ? PressedColor : ReleasedColor;
         }
 
+        while (joystickEvents.TryDequeue(out var newJoystickInput))
+        {
+            joystickInput = newJoystickInput;
+        }
+
+        while (tiltEvents.TryDequeue(out var newTiltInput))
+        {
+            tiltInput = newTiltInput;
+        }
+
         while (logMessages.TryDequeue(out var message))
         {
             Debug.LogError(message);
         }
 
-        // A gentle idle rotation makes it obvious that the demo is running.
-        cubeRenderer.transform.Rotate(0f, 25f * Time.deltaTime, 0f, Space.World);
+        var movement = new Vector3(joystickInput.x, joystickInput.y, 0f);
+        cubeTransform.Translate(movement * (MovementSpeed * Time.deltaTime), Space.World);
+
+        var position = cubeTransform.position;
+        position.x = Mathf.Clamp(position.x, -7f, 7f);
+        position.y = Mathf.Clamp(position.y, -4f, 4f);
+        cubeTransform.position = position;
+
+        var targetRotation = Quaternion.Euler(tiltInput.x, 0f, -tiltInput.y);
+        var rotationBlend = 1f - Mathf.Exp(-RotationFollowSpeed * Time.deltaTime);
+        cubeTransform.rotation = Quaternion.Slerp(cubeTransform.rotation, targetRotation, rotationBlend);
     }
 
     private void OnDestroy()
