@@ -27,6 +27,9 @@
 *.pdb.meta
 *.mdb.meta
 sysinfo.txt
+[Uu]pgrade[Ll]og*.htm
+[Uu]pgrade[Ll]og*.txt
+[Uu]pgrade[Ll]og*.xml
 
 # Unity crash reports and packaged builds
 crashlytics-build.properties
