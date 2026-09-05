@@ -4,6 +4,7 @@ using System.Globalization;
 using System.IO.Ports;
 using System.Threading;
 using UnityEngine;
+using UnityEngine.SceneManagement;
 
 /// <summary>
 /// Minimal Arduino-to-Unity controller test.
@@ -43,6 +44,12 @@ public sealed class ButtonCubeDemo : MonoBehaviour
     [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
     private static void StartDemo()
     {
+        // Keep this hardware sandbox isolated from the actual game scenes.
+        if (!string.Equals(SceneManager.GetActiveScene().name, "SampleScene", StringComparison.Ordinal))
+        {
+            return;
+        }
+
         var demoObject = new GameObject(nameof(ButtonCubeDemo));
         demoObject.AddComponent<ButtonCubeDemo>();
     }
