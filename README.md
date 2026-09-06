@@ -1,4 +1,4 @@
-# Ball Balancer 🎯
+# Roll of Duty 🎯
 
 ![Ball Balancer](https://github.com/user-attachments/assets/8920b256-2ba8-4988-b824-5351134eb4bd)
 
