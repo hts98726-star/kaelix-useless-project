@@ -265,15 +265,9 @@ Ensure the Arduino remains connected through USB so sensor data can continuously
 
 ## Video
 
-[Add your demo video link here]
+https://drive.google.com/drive/folders/1lPMRgCKHzCMi0nr4uXL7iPYcHevMNNp7?usp=sharing
 
 The demo shows the Arduino reading real-world motion and controller inputs and translating them into actions inside the Ball Balancer game.
-
-## Additional Demos
-
-[Add additional demo links here]
-
----
 
 # Team Contributions
 
